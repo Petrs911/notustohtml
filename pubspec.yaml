@@ -1,5 +1,6 @@
 name: notustohtml
 description: Convert the Notus document format to an HTML representation.
+publish_to: 'none'
 version: 0.0.8
 homepage: https://github.com/JacobWrenn/notustohtml
 
@@ -7,9 +8,13 @@ environment:
   sdk: ">=2.12.0 <3.0.0"
 
 dependencies:
-  notus: ^0.1.5
-  quill_delta: ^1.0.2
-  html: ^0.14.0
+  notus_format: ^1.0.3
+  flutter_quill:
+    git:
+      url: https://github.com/VadimBliz/flutter-quill.git
+  html: ^0.15.0
+  flutter:
+    sdk: flutter
 
 dev_dependencies:
   test:

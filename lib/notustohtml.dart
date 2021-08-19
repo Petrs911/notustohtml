@@ -4,20 +4,20 @@ import 'dart:convert';
 
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
-import 'package:notus/notus.dart';
-import 'package:quill_delta/quill_delta.dart' as quilDelta;
+import 'package:flutter_quill/models/quill_delta.dart';
+import 'package:notus_format/notus_format.dart';
 
-class NotusHtmlCodec extends Codec<quilDelta.Delta, String> {
+class NotusHtmlCodec extends Codec<Delta, String> {
   const NotusHtmlCodec();
 
   @override
-  Converter<String, quilDelta.Delta> get decoder => _NotusHtmlDecoder();
+  Converter<String, Delta> get decoder => _NotusHtmlDecoder();
 
   @override
-  Converter<quilDelta.Delta, String> get encoder => _NotusHtmlEncoder();
+  Converter<Delta, String> get encoder => _NotusHtmlEncoder();
 }
 
-class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
+class _NotusHtmlEncoder extends Converter<Delta, String> {
   static const kBold = 'strong';
   static const kItalic = 'em';
   static final kSimpleBlocks = <NotusAttribute, String>{
@@ -27,8 +27,8 @@ class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
   };
 
   @override
-  String convert(quilDelta.Delta input) {
-    final iterator = quilDelta.DeltaIterator(input);
+  String convert(Delta input) {
+    final iterator = DeltaIterator(input);
     final buffer = StringBuffer();
     final lineBuffer = StringBuffer();
     NotusAttribute<String>? currentBlockStyle;
@@ -77,7 +77,7 @@ class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
           _writeInline(lineBuffer, text, style, currentInlineStyle);
     }
 
-    void _handleLine(Map<String, dynamic> attributes) {
+    void _handleLine(Map<String, dynamic>? attributes) {
       final style = NotusStyle.fromJson(attributes);
       final lineBlock = style.get(NotusAttribute.block);
       if (lineBlock == currentBlockStyle) {
@@ -93,14 +93,15 @@ class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
     }
 
     while (iterator.hasNext) {
-      final op = iterator.next();
-      final lf = op.data.indexOf('\n');
+      final Operation op = iterator.next();
+      final String data = op.data as String;
+      final lf = data.indexOf('\n');
       if (lf == -1) {
-        _handleSpan(op.data, op.attributes);
+        _handleSpan(data, op.attributes);
       } else {
         var span = StringBuffer();
-        for (var i = 0; i < op.data.length; i++) {
-          if (op.data.codeUnitAt(i) == 0x0A) {
+        for (var i = 0; i < data.length; i++) {
+          if (data.codeUnitAt(i) == 0x0A) {
             if (span.isNotEmpty) {
               // Write the span if it's not empty.
               _handleSpan(span.toString(), op.attributes);
@@ -110,7 +111,7 @@ class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
             _handleLine(op.attributes);
             span.clear();
           } else {
-            span.writeCharCode(op.data.codeUnitAt(i));
+            span.writeCharCode(data.codeUnitAt(i));
           }
         }
         // Remaining span
@@ -181,20 +182,18 @@ class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
     return style;
   }
 
-  void _writeAttribute(StringBuffer buffer, NotusAttribute attribute,
+  void _writeAttribute(StringBuffer buffer, NotusAttribute? attribute,
       {bool close = false}) {
     if (attribute == NotusAttribute.bold) {
       _writeBoldTag(buffer, close: close);
     } else if (attribute == NotusAttribute.italic) {
       _writeItalicTag(buffer, close: close);
-    } else if (attribute.key == NotusAttribute.link.key) {
+    } else if (attribute?.key == NotusAttribute.link.key) {
       _writeLinkTag(buffer, attribute as NotusAttribute<String>, close: close);
-    } else if (attribute.key == NotusAttribute.heading.key) {
+    } else if (attribute?.key == NotusAttribute.heading.key) {
       _writeHeadingTag(buffer, attribute as NotusAttribute<int>, close: close);
-    } else if (attribute.key == NotusAttribute.block.key) {
+    } else if (attribute?.key == NotusAttribute.block.key) {
       _writeBlockTag(buffer, attribute as NotusAttribute<String>, close: close);
-    } else if (attribute.key == NotusAttribute.embed.key) {
-      _writeEmbedTag(buffer, attribute as EmbedAttribute, close: close);
     } else {
       throw ArgumentError('Cannot handle $attribute');
     }
@@ -239,37 +238,30 @@ class _NotusHtmlEncoder extends Converter<quilDelta.Delta, String> {
       }
     }
   }
-
-  void _writeEmbedTag(StringBuffer buffer, EmbedAttribute embed,
-      {bool close = false}) {
-    if (close) return;
-    if (embed.type == EmbedType.horizontalRule) {
-      buffer.write("<hr>");
-    } else if (embed.type == EmbedType.image) {
-      buffer.write('<img src="${embed.value["source"]}">');
-    }
-  }
 }
 
-class _NotusHtmlDecoder extends Converter<String, quilDelta.Delta> {
+class _NotusHtmlDecoder extends Converter<String, Delta> {
   @override
-  quilDelta.Delta convert(String input) {
-    var delta = quilDelta.Delta();
+  Delta convert(String input) {
+    var delta = Delta();
+    String data = delta.last.data as String;
     Document html = parse(input);
 
-    html.body.nodes.asMap().forEach((index, node) {
-      var next;
-      if (index + 1 < html.body.nodes.length) next = html.body.nodes[index + 1];
-      delta = _parseNode(node, delta, next) ?? quilDelta.Delta();
-    });
-    if (delta.last.data.endsWith("\n")) {
-      return delta;
+    if (html.body != null) {
+      html.body!.nodes.asMap().forEach((index, node) {
+        var next;
+        if (index + 1 < html.body!.nodes.length)
+          next = html.body!.nodes[index + 1];
+        delta = _parseNode(node, delta, next) ?? Delta();
+      });
+      if (data.endsWith("\n")) {
+        return delta;
+      }
     }
     return delta..insert("\n");
   }
 
-  quilDelta.Delta? _parseNode(node, quilDelta.Delta? delta, next,
-      {isNewLine, inBlock}) {
+  Delta? _parseNode(node, Delta? delta, next, {isNewLine, inBlock}) {
     if (node.runtimeType == Element) {
       Element element = node;
       if (element.localName == "ul") {
@@ -312,8 +304,7 @@ class _NotusHtmlDecoder extends Converter<String, quilDelta.Delta> {
     }
   }
 
-  quilDelta.Delta? _parseElement(
-      Element element, quilDelta.Delta? delta, String? type,
+  Delta? _parseElement(Element element, Delta? delta, String? type,
       {Map<String, dynamic>? attributes,
       String? listType,
       next,
@@ -353,22 +344,6 @@ class _NotusHtmlDecoder extends Converter<String, quilDelta.Delta> {
         delta?..insert("\n", blockAttributes);
       }
       return delta;
-    } else if (type == "embed") {
-      NotusDocument? tempdocument;
-      if (element.localName == "img") {
-        delta?..insert("\n");
-        tempdocument = NotusDocument.fromDelta(delta);
-        var index = tempdocument.length;
-        tempdocument.format(index - 1, 0,
-            NotusAttribute.embed.image(element.attributes["src"]));
-      }
-      if (element.localName == "hr") {
-        delta?..insert("\n");
-        tempdocument = NotusDocument.fromDelta(delta);
-        var index = tempdocument.length;
-        tempdocument.format(index - 1, 0, NotusAttribute.embed.horizontalRule);
-      }
-      return tempdocument?.toDelta();
     } else {
       if (attributes == null) attributes = {};
       if (element.localName == "em") {
